@@ -159,22 +159,32 @@ class SchemaDiffer:
         if previous is None:
             return []
 
-        previous_order = [
-            name for name in previous.column_names if name in set(live.column_names)
-        ]
-        live_order = [
-            name for name in live.column_names if name in set(previous.column_names)
-        ]
-        if previous_order == live_order:
-            return []
+        previous_names = set(previous.column_names)
+        live_names = set(live.column_names)
+        # Only columns present on both sides can have moved; added or
+        # removed columns already carry their own diff category.
+        shared = previous_names & live_names
+        previous_order = [name for name in previous.column_names if name in shared]
+        live_order = [name for name in live.column_names if name in shared]
 
+        # A column "moves" when its ordinal position in the full schema
+        # changes (new columns can shift everything after them) or when the
+        # relative ordering of the shared columns themselves changes.
         previous_positions = {
             name: position for position, name in enumerate(previous.column_names)
         }
+        live_positions = {
+            name: position for position, name in enumerate(live.column_names)
+        }
         moved: List[Tuple[str, Optional[int], Optional[int]]] = []
-        for new_position, name in enumerate(live.column_names):
-            if name in previous_positions and previous_positions[name] != new_position:
-                moved.append((name, previous_positions[name], new_position))
+        for name in live_order:
+            old_position = previous_positions[name]
+            new_position = live_positions[name]
+            if old_position != new_position:
+                moved.append((name, old_position, new_position))
+
+        if not moved and previous_order == live_order:
+            return []
 
         return [
             Diff(
